@@ -29,7 +29,7 @@ Resources:
     Properties:
       Name: !Sub ${AWS::StackName}
       Policies:
-        - !Ref WorkflowPolicy
+        - Fn::ImportValue: !Sub ${DeploymentName}-infra-stepfn-RedshiftSqlExecutionPolicyArn
       Definition:
         Comment: !Sub Generic State Machine for running SQL in Redshift (${DeploymentName})
         StartAt: BatchExecuteStatement
@@ -88,28 +88,6 @@ Resources:
             Type: Succeed
           Fail:
             Type: Fail
-
-  WorkflowPolicy:
-    Type: AWS::IAM::ManagedPolicy
-    Properties:
-      Description: !Sub Allow execution of SQL in Redshift cluster (${DeploymentName})
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Action:
-              - redshift:GetClusterCredentials
-            Resource:
-              - !Sub arn:aws:redshift:${AWS::Region}:${AWS::AccountId}:cluster:${DeploymentName}-test-redshift-cluster
-              - !Sub arn:aws:redshift:${AWS::Region}:${AWS::AccountId}:dbuser:${DeploymentName}-test-redshift-cluster/*
-              - !Sub arn:aws:redshift:${AWS::Region}:${AWS::AccountId}:dbname:${DeploymentName}-test-redshift-cluster/*
-          - Effect: Allow
-            Action:
-              - redshift-data:BatchExecuteStatement
-              - redshift-data:CancelStatement
-              - redshift-data:DescribeStatement
-              - redshift-data:ExecuteStatement
-            Resource: "*"
 
 Outputs:
   StateMachineArn:

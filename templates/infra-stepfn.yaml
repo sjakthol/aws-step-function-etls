@@ -29,9 +29,84 @@ Resources:
             Resource:
               - !Sub arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForStepFunctionsExecutionRule
 
+  RedshiftSqlExecutionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: !Sub Allow execution of SQL in Redshift cluster (${DeploymentName})
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - redshift:GetClusterCredentials
+            Resource:
+              - !Sub arn:aws:redshift:${AWS::Region}:${AWS::AccountId}:cluster:${DeploymentName}-test-redshift-cluster
+              - !Sub arn:aws:redshift:${AWS::Region}:${AWS::AccountId}:dbuser:${DeploymentName}-test-redshift-cluster/*
+              - !Sub arn:aws:redshift:${AWS::Region}:${AWS::AccountId}:dbname:${DeploymentName}-test-redshift-cluster/*
+          - Effect: Allow
+            Action:
+              - redshift-data:BatchExecuteStatement
+              - redshift-data:CancelStatement
+              - redshift-data:DescribeStatement
+              - redshift-data:ExecuteStatement
+            Resource: "*"
+
+  EmrJobExecutionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: !Sub Allow execution of EMR workflows in ${DeploymentName}
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - elasticmapreduce:RunJobFlow
+            Resource: "*"
+            Condition:
+              StringEquals:
+                aws:RequestTag/DeploymentName: !Ref DeploymentName
+          - Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource:
+              - Fn::ImportValue: !Sub ${DeploymentName}-infra-emr-EmrInstanceRole
+              - Fn::ImportValue: !Sub ${DeploymentName}-infra-emr-EmrServiceRole
+          - Effect: Allow
+            Action:
+              - elasticmapreduce:AddJobFlowSteps
+              - elasticmapreduce:CancelSteps
+              - elasticmapreduce:DescribeCluster
+              - elasticmapreduce:DescribeStep
+              - elasticmapreduce:TerminateJobFlows
+            Resource: "*"
+            Condition:
+              StringEquals:
+                aws:ResourceTag/DeploymentName: !Ref DeploymentName
+          - Effect: Allow
+            Action:
+              - events:PutTargets
+              - events:PutRule
+              - events:DescribeRule
+            Resource:
+              - !Sub arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventForEMRRunJobFlowRule
+              - !Sub arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventForEMRAddJobFlowStepsRule
+
+
 Outputs:
   CommonStateMachineRunnerPolicyArn:
     Description: ARN of IAM policy that allows execution of common Step Function State Machines
     Value: !Ref CommonStateMachineRunnerPolicy
     Export:
       Name: !Sub ${AWS::StackName}-CommonStateMachineRunnerPolicyArn
+
+  RedshiftSqlExecutionPolicyArn:
+    Description: ARN of IAM policy that allows execution of SQL in Redshift via the Redshift Data API
+    Value: !Ref RedshiftSqlExecutionPolicy
+    Export:
+      Name: !Sub ${AWS::StackName}-RedshiftSqlExecutionPolicyArn
+
+  EmrJobExecutionPolicyArn:
+    Description: ARN of IAM policy that allows execution of jobs on Amazon EMR
+    Value: !Ref EmrJobExecutionPolicy
+    Export:
+      Name: !Sub ${AWS::StackName}-EmrJobExecutionPolicyArn

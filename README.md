@@ -26,7 +26,7 @@ Deploy the setup with the following commands:
 
 ```bash
 # Deploy infrastructure
-make deploy-infra-emr deploy-infra-stepfn -j
+make deploy-infra-emr deploy-infra-stepfn
 
 # Deploy generic ETL workflow steps
 make deploy-step-emr deploy-step-redshift -j
@@ -50,7 +50,7 @@ Delete the setup with the following commands:
 make delete-test-redshift delete-test-neptune delete-test-aurora-psql -j
 make delete-example-emr-redshift delete-example-emr delete-example-redshift -j
 make delete-step-emr delete-step-redshift -j
-make delete-infra-emr delete-infra-stepfn -j
+make delete-infra-stepfn delete-infra-emr
 ```
 
 Notes:
