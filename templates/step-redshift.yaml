@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Step Function ETLs - Generic State Machine for running SQL in Redshift
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  DeploymentName:
+    Type: String
+
+Resources:
+  # Sample input (yaml)
+  #
+  # ClusterIdentifier: mycluster
+  # Database: dev
+  # DbUser: admin
+  # Sqls:
+  #   - SELECT 1
+  #   - SELECT 2
+
+  # Sample input (json)
+  # {
+  #   "ClusterIdentifier": "mycluster",
+  #   "Database": "dev",
+  #   "DbUser": "admin",
+  #   "Sqls": ["SELECT 1", "SELECT 2"]
+  # }
+
+  Workflow:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub ${AWS::StackName}
+      Policies:
+        - !Ref WorkflowPolicy
+      Definition:
+        Comment: !Sub Generic State Machine for running SQL in Redshift (${DeploymentName})
+        StartAt: BatchExecuteStatement
+        States:
+          BatchExecuteStatement:
+            Type: Task
+            Resource: arn:aws:states:::aws-sdk:redshiftdata:batchExecuteStatement
+            Parameters:
+              ClusterIdentifier.$: $$.Execution.Input.ClusterIdentifier
+              Database.$: $$.Execution.Input.Database
+              DbUser.$: $$.Execution.Input.DbUser
+              Sqls.$: $$.Execution.Input.Sqls
+            Next: Wait
+            Retry:
+              - {
+                  ErrorEquals: [States.ALL],
+                  IntervalSeconds: 5,
+                  MaxAttempts: 3,
+                }
+
+          Wait:
+            Type: Wait
+            Seconds: 5
+            Next: DescribeStatement
+
+          DescribeStatement:
+            Type: Task
+            Resource: arn:aws:states:::aws-sdk:redshiftdata:describeStatement
+            Parameters:
+              Id.$: $.Id
+            Next: Choice
+            Retry:
+              - {
+                  ErrorEquals: [States.ALL],
+                  IntervalSeconds: 5,
+                  MaxAttempts: 3,
+                }
+
+          Choice:
+            Type: Choice
+            Choices:
+              - Or:
+                  - { Variable: $.Status, StringEquals: ABORTED }
+                  - { Variable: $.Status, StringEquals: FAILED }
+                Next: Fail
+              - Or:
+                  - { Variable: $.Status, StringEquals: FINISHED }
+                Next: Succeed
+              - Or:
+                  - { Variable: $.Status, StringEquals: PICKED }
+                  - { Variable: $.Status, StringEquals: STARTED }
+                  - { Variable: $.Status, StringEquals: SUBMITTED }
+                Next: Wait
+            Default: Fail
+          Succeed:
+            Type: Succeed
+          Fail:
+            Type: Fail
+
+  WorkflowPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: !Sub Allow execution of SQL in Redshift cluster (${DeploymentName})
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - redshift:GetClusterCredentials
+            Resource:
+              - !Sub arn:aws:redshift:${AWS::Region}:${AWS::AccountId}:cluster:${DeploymentName}-test-redshift-cluster
+              - !Sub arn:aws:redshift:${AWS::Region}:${AWS::AccountId}:dbuser:${DeploymentName}-test-redshift-cluster/*
+              - !Sub arn:aws:redshift:${AWS::Region}:${AWS::AccountId}:dbname:${DeploymentName}-test-redshift-cluster/*
+          - Effect: Allow
+            Action:
+              - redshift-data:BatchExecuteStatement
+              - redshift-data:CancelStatement
+              - redshift-data:DescribeStatement
+              - redshift-data:ExecuteStatement
+            Resource: "*"
+
+Outputs:
+  StateMachineArn:
+    Value: !GetAtt Workflow.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-StateMachineArn

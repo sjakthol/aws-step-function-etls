@@ -1,0 +1,35 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Step Function ETLs - Example ETL that runs SQL in Redshift
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  DeploymentName:
+    Type: String
+
+Resources:
+  Workflow:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub ${AWS::StackName}
+      Policies:
+        - Fn::ImportValue: !Sub ${DeploymentName}-infra-stepfn-CommonStateMachineRunnerPolicyArn
+      Definition:
+        Comment: !Sub Example ETL that runs SQL in Redshift (${DeploymentName})
+        StartAt: ExecuteSql
+        States:
+          ExecuteSql:
+            Type: Task
+            Resource: arn:aws:states:::states:startExecution.sync:2
+            End: True
+            Parameters:
+              StateMachineArn:
+                Fn::ImportValue: !Sub ${DeploymentName}-step-redshift-StateMachineArn
+              Input:
+                AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID.$: $$.Execution.Id
+
+                ClusterIdentifier: !Sub ${DeploymentName}-test-redshift-cluster
+                DbUser: admin
+                Database: dev
+                Sqls:
+                  - SELECT 1
+                  - SELECT 2

@@ -1,0 +1,61 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Step Function ETLs - Example ETL that runs an EMR job
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  DeploymentName:
+    Type: String
+
+Resources:
+  Workflow:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub ${AWS::StackName}
+      Policies:
+        - Fn::ImportValue: !Sub ${DeploymentName}-infra-stepfn-CommonStateMachineRunnerPolicyArn
+      Definition:
+        Comment: !Sub Example ETL that runs an EMR job (${DeploymentName})
+        StartAt: RunEmrJob
+        States:
+          RunEmrJob:
+            Type: Task
+            Resource: arn:aws:states:::states:startExecution.sync:2
+            End: True
+            Parameters:
+              StateMachineArn:
+                Fn::ImportValue: !Sub ${DeploymentName}-step-emr-StateMachineArn
+              Input:
+                AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID.$: $$.Execution.Id
+
+                Id: job1
+
+                ClusterConfiguration:
+                  CoreFleetInstanceTypeConfigs:
+                    - { InstanceType: c5.xlarge }
+                    - { InstanceType: c5a.xlarge }
+                    - { InstanceType: c5d.xlarge }
+                    - { InstanceType: m5.xlarge }
+                    - { InstanceType: r5.xlarge }
+                    - { InstanceType: r5d.xlarge }
+
+                  CoreFleetOnDemandCapacity: 0
+                  CoreFleetSpotCapacity: 1
+
+                  LeaderFleetInstanceTypeConfigs:
+                    - { InstanceType: c5.xlarge }
+                    - { InstanceType: c5a.xlarge }
+                    - { InstanceType: c5d.xlarge }
+                    - { InstanceType: m5.xlarge }
+                    - { InstanceType: r5.xlarge }
+                    - { InstanceType: r5d.xlarge }
+
+                  LeaderFleetOnDemandCapacity: 0
+                  LeaderFleetSpotCapacity: 1
+
+                  ReleaseLabel: emr-6.4.0
+
+                Steps:
+                  - Name: Step1
+                    Command: ["true"]
+                  - Name: Step2
+                    Command: ["true"]

@@ -1,0 +1,37 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Step Function ETLs - Common infrastructure for Step Functions
+
+Parameters:
+  DeploymentName:
+    Type: String
+
+Resources:
+  CommonStateMachineRunnerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: !Sub Allow execution of common Step Function State Machines (${DeploymentName})
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - states:StartExecution
+              - states:DescribeExecution
+              - states:StopExecution
+            Resource:
+              - !Sub arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${DeploymentName}-step-*
+              - !Sub arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:${DeploymentName}-step-*:*
+          - Effect: Allow
+            Action:
+              - events:PutTargets
+              - events:PutRule
+              - events:DescribeRule
+            Resource:
+              - !Sub arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForStepFunctionsExecutionRule
+
+Outputs:
+  CommonStateMachineRunnerPolicyArn:
+    Description: ARN of IAM policy that allows execution of common Step Function State Machines
+    Value: !Ref CommonStateMachineRunnerPolicy
+    Export:
+      Name: !Sub ${AWS::StackName}-CommonStateMachineRunnerPolicyArn

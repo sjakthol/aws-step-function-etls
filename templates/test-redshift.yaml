@@ -1,0 +1,98 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Step Function ETLs - Redshift cluster for testing
+
+Parameters:
+  DeploymentName:
+    Type: String
+
+Resources:
+  ParameterGroup:
+    Type: AWS::Redshift::ClusterParameterGroup
+    Properties:
+      Description: !Sub Redshift Parameter Group for ${AWS::StackName}
+      ParameterGroupFamily: redshift-1.0
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-ParameterGroup" }
+
+  SubnetGroup:
+    Type: AWS::Redshift::ClusterSubnetGroup
+    Properties:
+      Description: !Sub Redshift Subnet Group for ${AWS::StackName}
+      SubnetIds:
+        - !ImportValue infra-vpc-sn-public-a
+        - !ImportValue infra-vpc-sn-public-b
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-SubnetGroup" }
+
+  ClusterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: redshift.amazonaws.com
+            Action: sts:AssumeRole
+      RoleName: !Sub ${AWS::StackName}-ClusterRole
+
+  ClusterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${AWS::StackName}-cluster-sg
+      GroupDescription: !Sub Security Group for ${AWS::StackName}
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-ClusterSecurityGroup" }
+      VpcId: !ImportValue infra-vpc-VpcId
+
+  ClusterAdminPassword:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: !Sub Password for admin user of ${AWS::StackName}-cluster
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "admin"}'
+        GenerateStringKey: "password"
+        PasswordLength: 30
+        ExcludeCharacters: >-
+          /@" \'
+      Name: !Sub ${AWS::StackName}-ClusterAdminPassword
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-ClusterAdminPassword" }
+
+  ClusterAdminPasswordAttachment:
+    Type: AWS::SecretsManager::SecretTargetAttachment
+    Properties:
+      SecretId: !Ref ClusterAdminPassword
+      TargetId: !Ref Cluster
+      TargetType: AWS::Redshift::Cluster
+
+  Cluster:
+    Type: AWS::Redshift::Cluster
+    Properties:
+      AquaConfigurationStatus: auto
+      AutomatedSnapshotRetentionPeriod: 7
+      ClusterIdentifier: !Sub ${AWS::StackName}-cluster
+      ClusterParameterGroupName: !Ref ParameterGroup
+      ClusterSubnetGroupName: !Ref SubnetGroup
+      ClusterType: single-node
+      DBName: dev
+      Encrypted: true
+      EnhancedVpcRouting: true
+      IamRoles:
+        - !GetAtt ClusterRole.Arn
+      # Tends to fail with
+      #   CREATE_FAILED - Resource handler returned message: "There is an operation running
+      #                   on the Cluster. Please try to enable logging at a later time."
+      # LoggingProperties:
+      #   BucketName: !ImportValue infra-buckets-LogBucket
+      #   S3KeyPrefix: !Sub redshift/cluster=${AWS::StackName}-cluster/
+      ManualSnapshotRetentionPeriod: 7
+      MasterUsername: !Sub "{{resolve:secretsmanager:${ClusterAdminPassword}:SecretString:username}}"
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${ClusterAdminPassword}:SecretString:password}}"
+      NodeType: dc2.large
+      # NumberOfNodes: 1
+      PubliclyAccessible: false
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-cluster" }
+      VpcSecurityGroupIds:
+        - !Ref ClusterSecurityGroup
