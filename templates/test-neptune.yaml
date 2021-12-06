@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Step Function ETLs - Neptune cluster for testing
+
+Parameters:
+  DeploymentName:
+    Type: String
+
+Resources:
+
+  ClusterParameterGroup:
+    Type: AWS::Neptune::DBClusterParameterGroup
+    Properties:
+      Description: !Sub Neptune Cluster Parameter Group for ${AWS::StackName}
+      Family: neptune1
+      Parameters:
+        neptune_enable_audit_log: true
+        neptune_query_timeout: 3600000 # 1h in ms
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-ClusterParameterGroup" }
+
+  ParameterGroup:
+    Type: AWS::Neptune::DBParameterGroup
+    Properties:
+      Description: !Sub Neptune Instance Parameter Group for ${AWS::StackName}
+      Family: neptune1
+      Parameters:
+        neptune_query_timeout: 3600000 # 1h in ms
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-ParameterGroup" }
+
+  SubnetGroup:
+    Type: AWS::Neptune::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub Neptune Subnet Group for ${AWS::StackName}
+      SubnetIds:
+        - !ImportValue infra-vpc-sn-private-a
+        - !ImportValue infra-vpc-sn-private-b
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-SubnetGroup" }
+
+  ClusterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: rds.amazonaws.com
+            Action: sts:AssumeRole
+      RoleName: !Sub ${AWS::StackName}-ClusterRole
+
+  ClusterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${AWS::StackName}-cluster-sg
+      GroupDescription: !Sub Security Group for ${AWS::StackName}
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-ClusterSecurityGroup" }
+      VpcId: !ImportValue infra-vpc-VpcId
+
+  Cluster:
+    Type: AWS::Neptune::DBCluster
+    DeletionPolicy: Delete
+    Properties:
+      # AssociatedRoles:
+      #   - DBClusterRole
+      # AvailabilityZones:
+      #   - String
+      BackupRetentionPeriod: 7
+      DBClusterIdentifier: !Sub ${AWS::StackName}-cluster
+      DBClusterParameterGroupName: !Ref ClusterParameterGroup
+      DBSubnetGroupName: !Ref SubnetGroup
+      DeletionProtection: false
+      EngineVersion: '1.1.0.0'
+      IamAuthEnabled: true
+      StorageEncrypted: true
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-cluster" }
+      VpcSecurityGroupIds:
+        - !Ref ClusterSecurityGroup
+
+  Instance1:
+    Type: AWS::Neptune::DBInstance
+    Properties:
+      AllowMajorVersionUpgrade: true
+      AutoMinorVersionUpgrade: true
+      AvailabilityZone: !Sub ${AWS::Region}a
+      DBClusterIdentifier: !Ref Cluster
+      DBInstanceClass: db.t3.medium
+      DBInstanceIdentifier: !Sub ${AWS::StackName}-instance1
+      DBParameterGroupName: !Ref ParameterGroup
+      DBSubnetGroupName: !Ref SubnetGroup
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-instance1" }
+
+Outputs:
+  ClusterEndpoint:
+    Value: !GetAtt Cluster.Endpoint
+    Export:
+      Name: !Sub ${AWS::StackName}-ClusterEndpoint
+  ClusterId:
+    Value: !GetAtt Cluster.ClusterResourceId
+    Export:
+      Name: !Sub ${AWS::StackName}-ClusterId
+  ClusterName:
+    Value: !Ref Cluster
+    Export:
+      Name: !Sub ${AWS::StackName}-ClusterName
+  ReadEndpoint:
+    Value: !GetAtt Cluster.ReadEndpoint
+    Export:
+      Name: !Sub ${AWS::StackName}-ReadEndpoint
+  Port:
+    Value: !GetAtt Cluster.Port
+    Export:
+      Name: !Sub ${AWS::StackName}-Port

@@ -34,14 +34,20 @@ make deploy-step-emr deploy-step-redshift -j
 # Deploy example ETL workflows that use generic ETL workflow steps
 make deploy-example-emr-redshift deploy-example-emr deploy-example-redshift -j
 
-# Deploy Redshift cluster ro running Redshift workflows (costs $0.30 / hour in eu-west-1)
+# Deploy Redshift cluster for running Redshift workflows (costs $0.30 / hour in eu-west-1)
 make deploy-test-redshift
+
+# Deploy Aurora Postgres cluster for testing Postgres workflows (costs $0.08 / hour in eu-west-1)
+make deploy-test-aurora-psql
+
+# Deploy Neptune cluster for testing Neptune workloads (costs $0.11 / hour in eu-west-1)
+make deploy-test-neptune
 ```
 
 Delete the setup with the following commands:
 
 ```
-make delete-test-redshift
+make delete-test-redshift delete-test-neptune delete-test-aurora-psql -j
 make delete-example-emr-redshift delete-example-emr delete-example-redshift -j
 make delete-step-emr delete-step-redshift -j
 make delete-infra-emr delete-infra-stepfn -j
@@ -167,6 +173,8 @@ The `templates/` directory contains following CloudFormation stacks
 
 * Supporting resources
   * `test-redshift` - Redshift cluster for testing purposes.
+  * `test-aurora-psql` - Aurora Postgres cluster for testing purposes.
+  * `test-neptune` - Neptune cluster for testing purposes.
 
 ## License
 

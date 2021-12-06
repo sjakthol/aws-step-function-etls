@@ -1,0 +1,142 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Step Function ETLs - Aurora Postgres cluster for testing
+
+Resources:
+  ClusterParameterGroup13:
+    Type: AWS::RDS::DBClusterParameterGroup
+    Properties:
+      Description: !Sub RDS Parameter Group for ${AWS::StackName}
+      Family: aurora-postgresql13
+      Parameters:
+        rds.force_ssl: true
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-ClusterParameterGroup" }
+
+  ParameterGroup13:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: !Sub RDS Parameter Group for ${AWS::StackName}
+      Family: aurora-postgresql13
+      Parameters:
+        application_name: test
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-ParameterGroup" }
+
+  SubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub RDS Subnet Group for ${AWS::StackName}
+      SubnetIds:
+        - !ImportValue infra-vpc-sn-private-a
+        - !ImportValue infra-vpc-sn-private-b
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-SubnetGroup" }
+
+  ClusterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: rds.amazonaws.com
+            Action: sts:AssumeRole
+      RoleName: !Sub ${AWS::StackName}-ClusterRole
+
+  ClusterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${AWS::StackName}-cluster-sg
+      GroupDescription: !Sub Security Group for ${AWS::StackName}
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-ClusterSecurityGroup" }
+      VpcId: !ImportValue infra-vpc-VpcId
+
+  ClusterAdminPassword:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: !Sub Password for admin user of ${AWS::StackName}-cluster
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "root"}'
+        GenerateStringKey: "password"
+        PasswordLength: 30
+        ExcludeCharacters: >-
+          /@" \'
+      Name: !Sub ${AWS::StackName}-ClusterAdminPassword
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-ClusterAdminPassword" }
+
+  ClusterAdminPasswordAttachment:
+    Type: AWS::SecretsManager::SecretTargetAttachment
+    Properties:
+      SecretId: !Ref ClusterAdminPassword
+      TargetId: !Ref Cluster
+      TargetType: AWS::RDS::DBCluster
+
+  Cluster:
+    Type: AWS::RDS::DBCluster
+    DeletionPolicy: Delete
+    Properties:
+      AssociatedRoles:
+        - { FeatureName: s3Export, RoleArn: !GetAtt ClusterRole.Arn }
+      # AvailabilityZones:
+      #   - String
+      BackupRetentionPeriod: 7
+      CopyTagsToSnapshot: true
+      DatabaseName: dev
+      DBClusterIdentifier: !Sub ${AWS::StackName}-cluster
+      DBClusterParameterGroupName: !Ref ClusterParameterGroup13
+      DBSubnetGroupName: !Ref SubnetGroup
+      DeletionProtection: false
+      EnableIAMDatabaseAuthentication: true
+      Engine: aurora-postgresql
+      EngineMode: provisioned
+      EngineVersion: "13.4"
+      MasterUsername: !Sub "{{resolve:secretsmanager:${ClusterAdminPassword}:SecretString:username}}"
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${ClusterAdminPassword}:SecretString:password}}"
+      StorageEncrypted: true
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-cluster" }
+      VpcSecurityGroupIds:
+        - !Ref ClusterSecurityGroup
+
+  Instance1:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    Properties:
+      AllowMajorVersionUpgrade: true
+      # AssociatedRoles:
+      #   - { RoleArn: !GetAtt ClusterRole.Arn }
+      AutoMinorVersionUpgrade: true
+      AvailabilityZone: !Sub ${AWS::Region}a
+      DBClusterIdentifier: !Ref Cluster
+      DBInstanceClass: db.t3.medium
+      DBInstanceIdentifier: !Sub ${AWS::StackName}-instance1
+      DBParameterGroupName: !Ref ParameterGroup13
+      DBSubnetGroupName: !Ref SubnetGroup
+      DeleteAutomatedBackups: false
+      EnablePerformanceInsights: true
+      Engine: aurora-postgresql
+      PerformanceInsightsRetentionPeriod: 7
+      PubliclyAccessible: false
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-instance1" }
+
+Outputs:
+  ClusterEndpoint:
+    Value: !GetAtt Cluster.Endpoint.Address
+    Export:
+      Name: !Sub ${AWS::StackName}-ClusterEndpoint
+  ClusterName:
+    Value: !Ref Cluster
+    Export:
+      Name: !Sub ${AWS::StackName}-ClusterName
+  ReadEndpoint:
+    Value: !GetAtt Cluster.ReadEndpoint.Address
+    Export:
+      Name: !Sub ${AWS::StackName}-ReadEndpoint
+  Port:
+    Value: !GetAtt Cluster.Endpoint.Port
+    Export:
+      Name: !Sub ${AWS::StackName}-Port
