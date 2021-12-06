@@ -1,7 +1,6 @@
-# AWS Step Function ETLs - Extract Transform Load (ETL) workflows implemented with AWS Step Functions
+# AWS Step Function ETLs
 
-This repository contains CloudFormation templates for setting up ETL workflows with AWS Step
-Functions.
+Extract Transform Load (ETL) workflows implemented with AWS Step Functions.
 
 ## Features
 
