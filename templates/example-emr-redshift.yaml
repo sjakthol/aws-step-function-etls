@@ -32,22 +32,16 @@ Resources:
                 ClusterConfiguration:
                   CoreFleetInstanceTypeConfigs:
                     - { InstanceType: c5.xlarge }
-                    - { InstanceType: c5a.xlarge }
-                    - { InstanceType: c5d.xlarge }
                     - { InstanceType: m5.xlarge }
                     - { InstanceType: r5.xlarge }
-                    - { InstanceType: r5d.xlarge }
 
                   CoreFleetOnDemandCapacity: 0
                   CoreFleetSpotCapacity: 1
 
                   LeaderFleetInstanceTypeConfigs:
                     - { InstanceType: c5.xlarge }
-                    - { InstanceType: c5a.xlarge }
-                    - { InstanceType: c5d.xlarge }
                     - { InstanceType: m5.xlarge }
                     - { InstanceType: r5.xlarge }
-                    - { InstanceType: r5d.xlarge }
 
                   LeaderFleetOnDemandCapacity: 0
                   LeaderFleetSpotCapacity: 1
