@@ -34,6 +34,9 @@ make deploy-step-emr deploy-step-redshift -j
 # Deploy example ETL workflows that use generic ETL workflow steps
 make deploy-example-emr-redshift deploy-example-emr deploy-example-redshift -j
 
+# Deploy example ETL workflow that uses an inline workflow definition
+make deploy-example-emr-redshift-inline
+
 # Deploy Redshift cluster for running Redshift workflows (costs $0.30 / hour in eu-west-1)
 make deploy-test-redshift
 
@@ -48,7 +51,7 @@ Delete the setup with the following commands:
 
 ```
 make delete-test-redshift delete-test-neptune delete-test-aurora-psql -j
-make delete-example-emr-redshift delete-example-emr delete-example-redshift -j
+make delete-example-emr-redshift delete-example-emr delete-example-redshift delete-example-emr-redshift-inline -j
 make delete-step-emr delete-step-redshift -j
 make delete-infra-stepfn delete-infra-emr
 ```
@@ -170,6 +173,7 @@ The `templates/` directory contains following CloudFormation stacks
   * `example-emr` - State Machine that runs steps on an Amazon EMR
   * `example-redshift` - State Machine that runs SQL in Amazon Redshift
   * `example-emr-redshift` - State Machine that first runs an Amazon EMR job and then executes SQL in Redshift
+  * `example-emr-redshift-inline` - State Machine that runs Amazon EMR job and executes SQL in Redshift but doesn't use common steps.
 
 * Supporting resources
   * `test-redshift` - Redshift cluster for testing purposes.

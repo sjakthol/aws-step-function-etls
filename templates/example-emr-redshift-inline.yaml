@@ -1,0 +1,165 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Step Function ETLs - Example ETL that runs an EMR job and SQL in Redshift without common EMR / Redshift steps
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  DeploymentName:
+    Type: String
+
+Resources:
+  Workflow:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub ${AWS::StackName}
+      Policies:
+        - Fn::ImportValue: !Sub ${DeploymentName}-infra-stepfn-RedshiftSqlExecutionPolicyArn
+        - Fn::ImportValue: !Sub ${DeploymentName}-infra-stepfn-EmrJobExecutionPolicyArn
+      Definition:
+        Comment: !Sub Example ETL that runs an EMR job and SQL in Redshift without common EMR / Redshift steps (${DeploymentName})
+        StartAt: CreateCluster
+        States:
+          CreateCluster:
+            Type: Task
+            Resource: arn:aws:states:::elasticmapreduce:createCluster.sync
+            ResultPath: $.Cluster
+            Parameters:
+              Applications:
+                - Name: Spark
+              Instances:
+                Ec2SubnetIds:
+                  - !ImportValue infra-vpc-sn-public-a
+                  - !ImportValue infra-vpc-sn-public-b
+                KeepJobFlowAliveWhenNoSteps: true
+                InstanceFleets:
+                  - InstanceFleetType: MASTER
+                    Name: Leader
+                    InstanceTypeConfigs:
+                      - { InstanceType: c5.xlarge }
+                      - { InstanceType: m5.xlarge }
+                      - { InstanceType: r5.xlarge }
+                    LaunchSpecifications:
+                      OnDemandSpecification:
+                        AllocationStrategy: lowest-price
+                      SpotSpecification:
+                        AllocationStrategy: capacity-optimized
+                        TimeoutAction: TERMINATE_CLUSTER
+                        TimeoutDurationMinutes: 30
+                    TargetOnDemandCapacity: 0
+                    TargetSpotCapacity: 1
+                  - InstanceFleetType: CORE
+                    Name: Core
+                    InstanceTypeConfigs:
+                      - { InstanceType: c5.xlarge }
+                      - { InstanceType: m5.xlarge }
+                      - { InstanceType: r5.xlarge }
+                    LaunchSpecifications:
+                      OnDemandSpecification:
+                        AllocationStrategy: lowest-price
+                      SpotSpecification:
+                        AllocationStrategy: capacity-optimized
+                        TimeoutAction: TERMINATE_CLUSTER
+                        TimeoutDurationMinutes: 30
+                    TargetOnDemandCapacity: 0
+                    TargetSpotCapacity: 1
+                EmrManagedMasterSecurityGroup:
+                  Fn::ImportValue: !Sub ${DeploymentName}-infra-emr-LeaderSecurityGroup
+                EmrManagedSlaveSecurityGroup:
+                  Fn::ImportValue: !Sub ${DeploymentName}-infra-emr-WorkerSecurityGroup
+              JobFlowRole:
+                Fn::ImportValue: !Sub ${DeploymentName}-infra-emr-EmrInstanceRoleProfile
+              LogUri:
+                Fn::Sub:
+                  - "s3://${Bucket}/${DeploymentName}/emr/"
+                  - { Bucket: !ImportValue "infra-buckets-LogBucket" }
+              Name.$: !Sub States.Format('${AWS::StackName}-{}', $$.Execution.Name)
+              ReleaseLabel: emr-6.4.0
+              ServiceRole:
+                Fn::ImportValue: !Sub ${DeploymentName}-infra-emr-EmrServiceRole
+              Tags:
+                - { Key: DeploymentName, Value: !Ref DeploymentName }
+                - { Key: Name, Value.$: !Sub "States.Format('${AWS::StackName}-{}', $$.Execution.Name)" }
+              VisibleToAllUsers: true
+            Next: RunStep1
+          RunStep1:
+            Type: Task
+            Resource: arn:aws:states:::elasticmapreduce:addStep.sync
+            Parameters:
+              ClusterId.$: $.Cluster.ClusterId
+              Step:
+                Name: Step1
+                ActionOnFailure: TERMINATE_CLUSTER
+                HadoopJarStep:
+                  Jar: command-runner.jar
+                  Args: ['true']
+            ResultPath: $.devnull
+            Next: RunStep2
+          RunStep2:
+            Type: Task
+            Resource: arn:aws:states:::elasticmapreduce:addStep.sync
+            Parameters:
+              ClusterId.$: $.Cluster.ClusterId
+              Step:
+                Name: Step2
+                ActionOnFailure: TERMINATE_CLUSTER
+                HadoopJarStep:
+                  Jar: command-runner.jar
+                  Args: ['true']
+            ResultPath: $.devnull
+            Next: TerminateCluster
+          TerminateCluster:
+            Type: Task
+            Resource: arn:aws:states:::elasticmapreduce:terminateCluster.sync
+            Parameters:
+              ClusterId.$: $.Cluster.ClusterId
+            Next: BatchExecuteStatement
+          BatchExecuteStatement:
+            Type: Task
+            Resource: arn:aws:states:::aws-sdk:redshiftdata:batchExecuteStatement
+            Parameters:
+              ClusterIdentifier: !Sub ${DeploymentName}-test-redshift-cluster
+              Database: dev
+              DbUser: admin
+              Sqls: ["SELECT 1", "SELECT 2"]
+            Next: Wait
+            Retry:
+              - {
+                  ErrorEquals: [States.ALL],
+                  IntervalSeconds: 5,
+                  MaxAttempts: 3,
+                }
+          Wait:
+            Type: Wait
+            Seconds: 5
+            Next: DescribeStatement
+          DescribeStatement:
+            Type: Task
+            Resource: arn:aws:states:::aws-sdk:redshiftdata:describeStatement
+            Parameters:
+              Id.$: $.Id
+            Next: Choice
+            Retry:
+              - {
+                  ErrorEquals: [States.ALL],
+                  IntervalSeconds: 5,
+                  MaxAttempts: 3,
+                }
+          Choice:
+            Type: Choice
+            Choices:
+              - Or:
+                  - { Variable: $.Status, StringEquals: ABORTED }
+                  - { Variable: $.Status, StringEquals: FAILED }
+                Next: Fail
+              - Or:
+                  - { Variable: $.Status, StringEquals: FINISHED }
+                Next: Succeed
+              - Or:
+                  - { Variable: $.Status, StringEquals: PICKED }
+                  - { Variable: $.Status, StringEquals: STARTED }
+                  - { Variable: $.Status, StringEquals: SUBMITTED }
+                Next: Wait
+            Default: Fail
+          Succeed:
+            Type: Succeed
+          Fail:
+            Type: Fail
