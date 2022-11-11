@@ -174,6 +174,7 @@ The `templates/` directory contains following CloudFormation stacks
   * `example-redshift` - State Machine that runs SQL in Amazon Redshift
   * `example-emr-redshift` - State Machine that first runs an Amazon EMR job and then executes SQL in Redshift
   * `example-emr-redshift-inline` - State Machine that runs Amazon EMR job and executes SQL in Redshift but doesn't use common steps.
+  * `example-neptune` - State Maachine that clones a Neptune cluster and terminates it.
 
 * Supporting resources
   * `test-redshift` - Redshift cluster for testing purposes.

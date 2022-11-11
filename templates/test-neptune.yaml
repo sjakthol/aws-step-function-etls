@@ -63,8 +63,8 @@ Resources:
     Type: AWS::Neptune::DBCluster
     DeletionPolicy: Delete
     Properties:
-      # AssociatedRoles:
-      #   - DBClusterRole
+      AssociatedRoles:
+        - { RoleArn: !GetAtt ClusterRole.Arn }
       # AvailabilityZones:
       #   - String
       BackupRetentionPeriod: 7

@@ -1,0 +1,169 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Step Function ETLs - Example ETL that clones a Neptune cluster
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  DeploymentName:
+    Type: String
+
+Resources:
+
+  ClusterParameterGroup:
+    Type: AWS::Neptune::DBClusterParameterGroup
+    Properties:
+      Description: !Sub Neptune Cluster Parameter Group for ${AWS::StackName}
+      Family: neptune1
+      Parameters:
+        neptune_enable_audit_log: true
+        neptune_query_timeout: 3600000 # 1h in ms
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-ClusterParameterGroup" }
+
+  ParameterGroup:
+    Type: AWS::Neptune::DBParameterGroup
+    Properties:
+      Description: !Sub Neptune Instance Parameter Group for ${AWS::StackName}
+      Family: neptune1
+      Parameters:
+        neptune_query_timeout: 3600000 # 1h in ms
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-ParameterGroup" }
+
+  SubnetGroup:
+    Type: AWS::Neptune::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub Neptune Subnet Group for ${AWS::StackName}
+      SubnetIds:
+        - !ImportValue infra-vpc-sn-private-a
+        - !ImportValue infra-vpc-sn-private-b
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-SubnetGroup" }
+
+  ClusterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${AWS::StackName}-cluster-sg
+      GroupDescription: !Sub Security Group for ${AWS::StackName}
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-ClusterSecurityGroup" }
+      VpcId: !ImportValue infra-vpc-VpcId
+
+  NeptuneClonePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: !Sub Allow cloning of Neptune clusters (${DeploymentName})
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - rds:RestoreDBClusterToPointInTime
+            Resource:
+              - !Sub arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:${DeploymentName}-test-neptune-cluster
+              - !Sub arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:${DeploymentName}-clone-*
+              - !Sub arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster-pg:${ClusterParameterGroup}
+              - !Sub arn:aws:rds:${AWS::Region}:${AWS::AccountId}:subgrp:${SubnetGroup}
+          - Effect: Allow
+            Action:
+              - rds:DeleteDBCluster
+              - rds:CreateDBInstance
+              - rds:DeleteDBInstance
+              - rds:DescribeDBClusters
+            Resource:
+              - !Sub arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:${DeploymentName}-clone-*
+              - !Sub arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:${DeploymentName}-clone-*
+              - !Sub arn:aws:rds:${AWS::Region}:${AWS::AccountId}:pg:${ParameterGroup}
+
+  Workflow:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub ${AWS::StackName}
+      Policies:
+        - !Ref NeptuneClonePolicy
+      Definition:
+        Comment: !Sub Example ETL that clones a Neptune cluster (${DeploymentName})
+        StartAt:  RestoreDBClusterToPointInTime
+        States:
+          RestoreDBClusterToPointInTime:
+            Type: Task
+            Resource: arn:aws:states:::aws-sdk:neptune:restoreDBClusterToPointInTime
+            Parameters:
+              DbClusterIdentifier.$: !Sub States.Format('${DeploymentName}-clone-test-neptune-{}', $$.Execution.Input.Id)
+              DbClusterParameterGroupName: !Ref ClusterParameterGroup
+              DbSubnetGroupName: !Ref SubnetGroup
+              DeletionProtection: False
+              # EnableIamDatabaseAuthentication: true
+              RestoreType: copy-on-write
+              SourceDBClusterIdentifier: !Sub ${DeploymentName}-test-neptune-cluster
+              UseLatestRestorableTime: true
+              VpcSecurityGroupIds:
+                - !Ref ClusterSecurityGroup
+            Retry:
+            - ErrorEquals: [States.ALL]
+              IntervalSeconds: 5
+              MaxAttempts: 3
+            Next: CreateDBInstance
+          CreateDBInstance:
+            Type: Task
+            Resource: arn:aws:states:::aws-sdk:neptune:createDBInstance
+            Parameters:
+              DbClusterIdentifier.$: !Sub States.Format('${DeploymentName}-clone-test-neptune-{}', $$.Execution.Input.Id)
+              DbInstanceClass: db.t3.medium
+              DbInstanceIdentifier.$: !Sub States.Format('${DeploymentName}-clone-test-neptune-{}-instance1', $$.Execution.Input.Id)
+              DbParameterGroupName: !Ref ParameterGroup
+              Engine: neptune
+            Retry:
+            - ErrorEquals: [States.ALL]
+              IntervalSeconds: 5
+              MaxAttempts: 3
+            Next: Wait
+          Wait:
+            Type: Wait
+            Seconds: 15
+            Next: DescribeDBClusters
+          DescribeDBClusters:
+            Type: Task
+            Resource: arn:aws:states:::aws-sdk:neptune:describeDBClusters
+            Parameters:
+              DbClusterIdentifier.$: !Sub States.Format('${DeploymentName}-clone-test-neptune-{}', $$.Execution.Input.Id)
+            Retry:
+            - ErrorEquals: [States.ALL]
+              IntervalSeconds: 5
+              MaxAttempts: 3
+            Next: Choice
+          Choice:
+            Type: Choice
+            Choices:
+              - Or:
+                  - { Variable: '$.DbClusters[0].Status', StringEquals: available }
+                Next: DeleteDBInstance
+              - Or:
+                  - { Variable: '$.DbClusters[0].Status', StringEquals: creating }
+                Next: Wait
+            Default: DeleteDBInstance
+          DeleteDBInstance:
+            Type: Task
+            Resource: arn:aws:states:::aws-sdk:neptune:deleteDBInstance
+            Parameters:
+              DbInstanceIdentifier.$: !Sub States.Format('${DeploymentName}-clone-test-neptune-{}-instance1', $$.Execution.Input.Id)
+              SkipFinalSnapshot: true
+            Retry:
+            - ErrorEquals: [States.ALL]
+              IntervalSeconds: 5
+              MaxAttempts: 3
+            Next: DeleteDBCluster
+          DeleteDBCluster:
+            Type: Task
+            Resource: arn:aws:states:::aws-sdk:neptune:deleteDBCluster
+            Parameters:
+              DbClusterIdentifier.$: !Sub States.Format('${DeploymentName}-clone-test-neptune-{}', $$.Execution.Input.Id)
+              SkipFinalSnapshot: true
+            Retry:
+            - ErrorEquals: [States.ALL]
+              IntervalSeconds: 5
+              MaxAttempts: 3
+            End: True
+          # Succeed:
+          #   Type: Succeed
+          # Fail:
+          #   Type: Fail
