@@ -15,24 +15,24 @@ STACK_REGION_PREFIX := $(AWS_$(AWS_REGION)_PREFIX)
 DEPLOYMENT_NAME := $(STACK_REGION_PREFIX)-stepfn-etl
 TAGS ?= DeploymentName=$(DEPLOYMENT_NAME)
 
-
-define stack_template =
-
-deploy-$(basename $(notdir $(1))): $(1)
+# Generic deployment and teardown targets
+deploy-%:
 	$(AWS_CMD) cloudformation deploy \
-		--stack-name $(DEPLOYMENT_NAME)-$(basename $(notdir $(1))) \
+		--stack-name $(DEPLOYMENT_NAME)-$* \
 		--tags $(TAGS) \
 		--parameter-overrides DeploymentName=$(DEPLOYMENT_NAME) $(EXTRA_PARAMS) \
 		--no-fail-on-empty-changeset \
-		--template-file $(1) \
-		--capabilities CAPABILITY_NAMED_IAM
+		--template-file templates/$*.yaml \
+		--capabilities CAPABILITY_NAMED_IAM \
+		$(EXTRA_ARGS)
 
-delete-$(basename $(notdir $(1))): $(1)
+delete-%:
 	$(AWS_CMD) cloudformation delete-stack \
-		--stack-name $(DEPLOYMENT_NAME)-$(basename $(notdir $(1)))
+		--stack-name $(DEPLOYMENT_NAME)-$*
+
 	$(AWS_CMD) cloudformation wait stack-delete-complete \
-		--stack-name $(DEPLOYMENT_NAME)-$(basename $(notdir $(1)))
+		--stack-name $(DEPLOYMENT_NAME)-$*
 
-endef
-
-$(foreach template, $(wildcard templates/*.yaml), $(eval $(call stack_template,$(template))))
+# Concrete deploy and delete targets for autocompletion
+$(addprefix deploy-,$(basename $(notdir $(wildcard templates/*.yaml)))):
+$(addprefix delete-,$(basename $(notdir $(wildcard templates/*.yaml)))):
