@@ -1,0 +1,31 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Step Function ETLs - Custom Redshift cross-VPC endpoint for publicly accessible Redshift clusters (consumer, create VPC endpoint for Redshift)
+
+Parameters:
+  DeploymentName:
+    Type: String
+
+Resources:
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${AWS::StackName}-sg
+      GroupDescription: !Sub Security Group for ${AWS::StackName}
+      SecurityGroupIngress:
+        - { IpProtocol: -1, CidrIp: 10.0.0.0/8 }
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-SecurityGroup" }
+      VpcId: !ImportValue infra-vpc-VpcId
+
+  VPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      # PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      ServiceName: com.amazonaws.vpce.eu-north-1.vpce-svc-024b9069389ce29b1 # FIXME: Change this
+      SubnetIds:
+        - Fn::ImportValue: infra-vpc-sn-private-a
+        - Fn::ImportValue: infra-vpc-sn-private-b
+      VpcEndpointType: Interface
+      VpcId: !ImportValue infra-vpc-VpcId

@@ -96,3 +96,9 @@ Resources:
         - { Key: Name, Value: !Sub "${AWS::StackName}-cluster" }
       VpcSecurityGroupIds:
         - !Ref ClusterSecurityGroup
+
+Outputs:
+  ClusterSecurityGroup:
+    Value: !Ref ClusterSecurityGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-ClusterSecurityGroup

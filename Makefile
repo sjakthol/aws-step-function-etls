@@ -36,3 +36,11 @@ delete-%:
 # Concrete deploy and delete targets for autocompletion
 $(addprefix deploy-,$(basename $(notdir $(wildcard templates/*.yaml)))):
 $(addprefix delete-,$(basename $(notdir $(wildcard templates/*.yaml)))):
+
+# Customizations
+REDSHIFT_PRIVATE_IP = $(shell $(AWS) redshift describe-clusters --cluster-identifier $(DEPLOYMENT_NAME)-test-redshift-cluster --query 'Clusters[0].ClusterNodes[?contains(`["SHARED", "LEADER"]`, NodeRole)].PrivateIPAddress' --output text)
+deploy-test-redshift-vpcendpoint: EXTRA_PARAMS="LeaderPrivateIp=$(REDSHIFT_PRIVATE_IP)"
+
+NLB_FULL_NAME = $(shell $(AWS) cloudformation describe-stacks --stack-name $(DEPLOYMENT_NAME)-test-redshift-vpcendpoint --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerFullName`].OutputValue' --output text)
+NLB_IP_ADDRESSES = $(shell $(AWS) ec2 describe-network-interfaces --filter Name=description,Values="ELB $(NLB_FULL_NAME)" --query 'NetworkInterfaces[*].PrivateIpAddress | join(`,`, @)' --output text)
+deploy-test-redshift-vpcendpoint-sg: EXTRA_PARAMS="LoadBalancerIps=$(NLB_IP_ADDRESSES)"

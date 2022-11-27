@@ -1,0 +1,26 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Step Function ETLs - Custom Redshift cross-VPC endpoint for publicly accessible Redshift clusters (provider, grant NLB IPs access to Redshift)
+
+Parameters:
+  DeploymentName:
+    Type: String
+
+  LoadBalancerIps:
+    Type: List<String>
+
+Resources:
+  LoadBalancerToRedshiftIngress1:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: -1
+      CidrIp: !Sub ["${Ip}/32", Ip: !Select [0, !Ref LoadBalancerIps]]
+      GroupId:
+        Fn::ImportValue: !Sub ${DeploymentName}-test-redshift-ClusterSecurityGroup
+
+  LoadBalancerToRedshiftIngress2:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: -1
+      CidrIp: !Sub ["${Ip}/32", Ip: !Select [1, !Ref LoadBalancerIps]]
+      GroupId:
+        Fn::ImportValue: !Sub ${DeploymentName}-test-redshift-ClusterSecurityGroup

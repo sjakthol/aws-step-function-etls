@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Step Function ETLs - Custom Redshift cross-VPC endpoint for publicly accessible Redshift clusters (provider, create VPC endpoint service)
+
+Parameters:
+  DeploymentName:
+    Type: String
+
+  LeaderPrivateIp:
+    Type: String
+    MinLength: 1
+
+Resources:
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      LoadBalancerAttributes:
+        - { Key: load_balancing.cross_zone.enabled, Value: true }
+      Scheme: internal
+      Subnets:
+        - Fn::ImportValue: infra-vpc-sn-private-a
+        - Fn::ImportValue: infra-vpc-sn-private-b
+      Tags:
+        - { Key: Name, Value: !Sub "${AWS::StackName}-nlb" }
+      Type: network
+
+  RedshiftTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 5439
+      Protocol: TCP
+      Targets:
+        - { Id: !Ref LeaderPrivateIp }
+      TargetType: ip
+      VpcId: !ImportValue infra-vpc-VpcId
+
+  RedshiftListener:
+   Type: "AWS::ElasticLoadBalancingV2::Listener"
+   Properties:
+     DefaultActions:
+       - Type: "forward"
+         TargetGroupArn: !Ref RedshiftTargetGroup
+     LoadBalancerArn: !Ref LoadBalancer
+     Port: 5439
+     Protocol: TCP
+
+  VPCEndpointService:
+    Type: AWS::EC2::VPCEndpointService
+    Properties:
+      AcceptanceRequired: false
+      ContributorInsightsEnabled: true
+      NetworkLoadBalancerArns:
+        - !Ref LoadBalancer
+
+  VPCEndpointServicePermissions:
+    Type: AWS::EC2::VPCEndpointServicePermissions
+    Properties:
+      AllowedPrincipals:
+        - arn:aws:iam::637886842123:root # FIXME: Wrong account
+      ServiceId: !Ref VPCEndpointService
+
+Outputs:
+  LoadBalancerName:
+    Value: !GetAtt LoadBalancer.LoadBalancerName
+
+  LoadBalancerFullName:
+    Value: !GetAtt LoadBalancer.LoadBalancerFullName
+
+  VpcEndpointServiceId:
+    Value: !Ref VPCEndpointService
+
+  VpcEndpointServiceName:
+    Value: !Sub com.amazonaws.vpce.${AWS::Region}.${VPCEndpointService}
